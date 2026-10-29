@@ -6,6 +6,7 @@ pipeline {
         IMAGE_NAME = 'secureship-demo'
         CONTAINER_NAME = 'secureship-demo-ci'
         VENV = '.venv'
+        REPORT_DIR = '/opt/secureship-dashboard-test/reports'
     }
 
     stages {
@@ -49,7 +50,16 @@ pipeline {
 
         stage('Source Security Scan') {
             steps {
-                sh 'trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL .'
+                sh '''
+                    set -eu
+                    mkdir -p "${REPORT_DIR}"
+
+                    trivy fs \
+                      --scanners vuln,secret,misconfig \
+                      --format json \
+                      --output "${REPORT_DIR}/trivy-fs-report.json" \
+                      .
+                '''
             }
         }
 
@@ -61,7 +71,17 @@ pipeline {
 
         stage('Container Vulnerability Scan') {
             steps {
-                sh 'trivy image --severity CRITICAL --ignore-unfixed --exit-code 1 ${IMAGE_NAME}:${BUILD_NUMBER}'
+                sh '''
+                    mkdir -p "${REPORT_DIR}"
+
+                    trivy image \
+                      --severity CRITICAL \
+                      --ignore-unfixed \
+                      --format json \
+                      --output "${REPORT_DIR}/trivy-image-report.json" \
+                      "${IMAGE_NAME}:${BUILD_NUMBER}" \
+                      --exit-code 1
+                '''
             }
         }
 
