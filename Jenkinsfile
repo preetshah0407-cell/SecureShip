@@ -1,16 +1,18 @@
+
 pipeline {
     agent any
 
     environment {
         IMAGE_NAME = 'secureship-demo'
         CONTAINER_NAME = 'secureship-demo-ci'
-        VENV = '/opt/secureship/.venv'
+        VENV = '.venv'
     }
 
     stages {
         stage('Checkout') {
             steps {
-                echo 'SecureShip source is ready'
+                echo 'Source checked out from GitHub'
+                sh 'pwd && git log -1 --oneline'
             }
         }
 
@@ -26,6 +28,22 @@ pipeline {
         stage('Automated Tests') {
             steps {
                 sh 'PYTHONPATH=. ${VENV}/bin/pytest -v'
+            }
+        }
+
+        stage('SonarQube Code Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh '''
+                        SCANNER_HOME=/var/lib/jenkins/tools/hudson.plugins.sonar.SonarRunnerInstallation/SonarScanner
+                        "$SCANNER_HOME/bin/sonar-scanner" \
+                          -Dsonar.projectKey=secureship \
+                          -Dsonar.projectName=SecureShip \
+                          -Dsonar.sources=app.py \
+                          -Dsonar.tests=tests \
+                          -Dsonar.python.version=3.12
+                    '''
+                }
             }
         }
 
@@ -68,3 +86,4 @@ pipeline {
         }
     }
 }
+
