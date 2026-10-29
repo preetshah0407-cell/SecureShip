@@ -47,6 +47,14 @@ pipeline {
             }
         }
 
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
         stage('Source Security Scan') {
             steps {
                 sh 'trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL .'
@@ -65,17 +73,66 @@ pipeline {
             }
         }
 
-        stage('Deploy and Health Check') {
+                stage('Deploy and Health Check') {
             steps {
                 sh '''
+                    set -eu
+
+                    PREVIOUS_IMAGE=$(docker inspect \
+                        --format='{{.Config.Image}}' \
+                        ${CONTAINER_NAME} 2>/dev/null || true)
+
+                    PREVIOUS_RUNNING=$(docker inspect \
+                        --format='{{.State.Running}}' \
+                        ${CONTAINER_NAME} 2>/dev/null || true)
+
                     docker rm -f ${CONTAINER_NAME} >/dev/null 2>&1 || true
-                    docker run -d --name ${CONTAINER_NAME} -p 5001:5000 ${IMAGE_NAME}:${BUILD_NUMBER}
+
+                    rollback() {
+                        echo "Deployment failed. Rolling back..."
+
+                        docker rm -f ${CONTAINER_NAME} >/dev/null 2>&1 || true
+
+                        if [ -n "$PREVIOUS_IMAGE" ] && \
+                           [ "$PREVIOUS_RUNNING" = "true" ]; then
+                            docker run -d \
+                                --name ${CONTAINER_NAME} \
+                                -p 5001:5000 \
+                                "$PREVIOUS_IMAGE"
+
+                            sleep 5
+
+                            if curl --fail --silent \
+                                http://localhost:5001/health >/dev/null; then
+                                echo "Rollback successful."
+                            else
+                                echo "WARNING: Rollback health check failed."
+                            fi
+                        else
+                            echo "No previously running container available."
+                        fi
+                    }
+
+                    if ! docker run -d \
+                        --name ${CONTAINER_NAME} \
+                        -p 5001:5000 \
+                        ${IMAGE_NAME}:${BUILD_NUMBER}; then
+                        rollback
+                        exit 1
+                    fi
+
                     sleep 5
-                    curl --fail http://localhost:5001/health
+
+                    if ! curl --fail --silent \
+                        http://localhost:5001/health; then
+                        rollback
+                        exit 1
+                    fi
+
+                    echo "Deployment and health check successful."
                 '''
             }
         }
-    }
 
     post {
         success {
