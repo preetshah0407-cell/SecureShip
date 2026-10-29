@@ -7,7 +7,7 @@ app = Flask(__name__)
 def home():
     return jsonify({
         "project": "SecureShip",
-        "message": "Container Security and Compliance Pipeline",
+        "message": "Automated Container Security and Compliance Pipeline",
         "status": "running"
     })
 
